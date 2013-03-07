@@ -20,6 +20,7 @@ class PublicAddressBook(AddressBookPluginBase):
 		self.meta = MetaData()
 		self.contacts = Table('contactos', self.meta, autoload=True, autoload_with=engine)
 		self.telefonos = Table('telefonos', self.meta, autoload=True, autoload_with=engine)
+		self.direcciones = Table('direcciones', self.meta, autoload=True, autoload_with=engine)
 		self.emails = Table('direccionescorreo', self.meta, autoload=True, autoload_with=engine)
 		self.empresas = Table('empresas', self.meta, autoload=True, autoload_with=engine)
 		self._ids_empresas = {}
@@ -54,13 +55,15 @@ class PublicAddressBook(AddressBookPluginBase):
 				except:
 					pass
 				contactObj = AddressBookContact(id_contacto, '%s %s' % (c.Nombre, c.Apellido), email, phones, id_contacto)
-				for phone in dbsession.query(self.telefonos).filter(self.telefonos.columns.IDref2 == c.IDContacto).all():
+				for phone in dbsession.query(self.telefonos, self.direcciones.columns.CodCiudad, self.direcciones.columns.CodPais).filter(and_(self.telefonos.columns.IDref2 == c.IDContacto, self.direcciones.columns.RecID == self.telefonos.columns.IDDireccion)).all():
 					id_phone = self._phone_ids.get(phone.RecID)
 					if id_phone is None:
 						self._last_id = self._last_id +1
 						id_phone = self._last_id
 						self._phone_ids[phone.RecID] = self._last_id
-					phones.append(AddressBookPhone(id_phone, phone.Tipo, phone.numero, contactObj, phone.numero))
+
+					print c.Nombre ,'%s %s %s' % (phone.CodPais, phone.CodCiudad, phone.numero)
+					phones.append(AddressBookPhone(id_phone, phone.Tipo, '%s %s %s' % (phone.CodPais, phone.CodCiudad, phone.numero), contactObj, '%s %s %s' % (phone.CodPais, phone.CodCiudad, phone.numero)))
 				contactObj.phone_numbers = phones
 				contacts.append(contactObj)
 
@@ -83,13 +86,13 @@ class PublicAddressBook(AddressBookPluginBase):
 				id_empresa = dbid
 				contact = dbsession.query(self.contacts).filter(self.contacts.columns.IDContacto == id_empresa).one()
 				phones = []
-				for phone in dbsession.query(self.telefonos).filter(self.telefonos.columns.IDref2 == id_empresa).all():
+				for phone in dbsession.query(self.telefonos, self.direcciones.columns.CodCiudad, self.direcciones.columns.CodPais).filter(and_(self.telefonos.columns.IDref2 == id_empresa, self.direcciones.columns.RecID == self.telefonos.columns.IDDireccion)).all():
 					id_phone = self._phone_ids.get(phone.RecID)
 					if id_phone is None:
 						self._last_id = self._last_id +1
 						id_phone = self._last_id
 						self._phone_ids[phone.RecID] = self._last_id
-					phones.append(AddressBookPhone(id_phone, phone.Tipo, phone.numero))
+					phones.append(AddressBookPhone(id_phone, phone.Tipo, '%s %s %s' % (phone.CodPais, phone.CodCiudad, phone.numero)))
 				email = ''
 				try:
 					email = dbsession.query(self.emails.columns.Direccion).filter(self.emails.columns.IDref == id_empresa).first()[0]
