@@ -6,7 +6,7 @@ from sqlalchemy import MetaData
 from sqlalchemy import and_, asc
 
 from wiregui_server.log_ import loggerFactory
-from wiregui_server.addressbook import AddressBookPluginBase
+from wiregui_server.addressbook import AddressBookPluginBase, AddressBookNode, AddressBookContact, AddressBookPhone
 
 from wiregui_tactica_plugin.database import engine, dbsession
 
@@ -23,37 +23,48 @@ class PublicAddressBook(AddressBookPluginBase):
 		self.emails = Table('direccionescorreo', self.meta, autoload=True, autoload_with=engine)
 		self.empresas = Table('empresas', self.meta, autoload=True, autoload_with=engine)
 		self._ids_empresas = {}
-		self._last_id = 0
+		self._last_id = 1
 		self._ids_contactos = {}
+		self._phone_ids = {}
 
 	@dbsession
 	def public(self,dbsession):
 		''' Return proper addressbook format (json) '''
-		entries = []
-		for c in dbsession.query(self.contacts, self.empresas).filter(
-										and_(self.empresas.columns.Calificacion!='DIRECTORIO',
-											self.empresas.columns.IDEmpresa == self.contacts.columns.IDEmpresa)).order_by(
-																							asc(self.empresas.columns.Empresa), asc(self.contacts.columns.Apellido)).all():
-			id_empresa = self._ids_empresas.get(c.IDEmpresa)
+		entries = AddressBookNode(0, 'Public Address Book', [])
+		for empresa in dbsession.query(self.empresas).filter(self.empresas.columns.Calificacion=='DIRECTORIO').order_by(asc(self.empresas.columns.Empresa)).all():
+			id_empresa = self._ids_empresas.get(empresa.IDEmpresa)
 			if id_empresa is None:
 				self._last_id = self._last_id +1
 				id_empresa = self._last_id
-				self._ids_empresas[c.IDEmpresa] = self._last_id
+				self._ids_empresas[empresa.IDEmpresa] = self._last_id
 
-			id_contacto = self._ids_contactos.get(c.IDContacto)
-			if id_contacto is None:
-				self._last_id = self._last_id +1
-				id_contacto = self._last_id
-				self._ids_contactos[c.IDContacto] = self._last_id
+			contacts = []
+			for c in dbsession.query(self.contacts).filter(and_(empresa.IDEmpresa == self.contacts.columns.IDEmpresa, self.contacts.columns.Bloqueado == 0)).all():
+				print empresa.Empresa, c.Nombre, c.Apellido
+				id_contacto = self._ids_contactos.get(c.IDContacto)
+				if id_contacto is None:
+					self._last_id = self._last_id +1
+					id_contacto = self._last_id
+					self._ids_contactos[c.IDContacto] = self._last_id
 
-			empresa_exists = False
-			for entry in entries:
-				if entry.get('type') == 'group' and entry.get('id') == id_empresa:
-					empresa_exists = True
-					entry['children'].append({'type': 'contact', 'name': '%s %s' % (c.Nombre, c.Apellido), 'id': id_contacto})
+				phones = []
+				email = ''
+				try:
+					email = dbsession.query(self.emails.columns.Direccion).filter(self.emails.columns.IDref == c.IDContacto).first()[0]
+				except:
+					pass
+				contactObj = AddressBookContact(id_contacto, '%s %s' % (c.Nombre, c.Apellido), email, phones, id_contacto)
+				for phone in dbsession.query(self.telefonos).filter(self.telefonos.columns.IDref2 == c.IDContacto).all():
+					id_phone = self._phone_ids.get(phone.RecID)
+					if id_phone is None:
+						self._last_id = self._last_id +1
+						id_phone = self._last_id
+						self._phone_ids[phone.RecID] = self._last_id
+					phones.append(AddressBookPhone(id_phone, phone.Tipo, phone.numero, contactObj, phone.numero))
+				contactObj.phone_numbers = phones
+				contacts.append(contactObj)
 
-			if not empresa_exists:
-				entries.append({'name': c.Empresa, 'id': id_empresa, 'type': 'group', 'children': [{'type': 'contact', 'name': '%s %s' % (c.Nombre, c.Apellido), 'id': id_contacto}]})
+			entries.children.append(AddressBookNode(id_empresa, empresa.Empresa, contacts))
 
 		return entries
 		
@@ -73,11 +84,15 @@ class PublicAddressBook(AddressBookPluginBase):
 				contact = dbsession.query(self.contacts).filter(self.contacts.columns.IDContacto == id_empresa).one()
 				phones = []
 				for phone in dbsession.query(self.telefonos).filter(self.telefonos.columns.IDref2 == id_empresa).all():
-					phones.append(AddressBookPhone('0', phone.Tipo, phone.numero))
+					id_phone = self._phone_ids.get(phone.RecID)
+					if id_phone is None:
+						self._last_id = self._last_id +1
+						id_phone = self._last_id
+						self._phone_ids[phone.RecID] = self._last_id
+					phones.append(AddressBookPhone(id_phone, phone.Tipo, phone.numero))
 				email = ''
 				try:
 					email = dbsession.query(self.emails.columns.Direccion).filter(self.emails.columns.IDref == id_empresa).first()[0]
-					print email
 				except:
 					pass
 				c = AddressBookContact(email, phones)

@@ -11,7 +11,7 @@ setup (
     author="Indicium SRL",
     author_email="jmesquita@indicium.com.ar",
     packages = find_packages(),
-    install_requires = ['SQLAlchemy'],
+    install_requires = ['SQLAlchemy', 'PyMySQL'],
     entry_points = {
     'wiregui.addressbook' : ['tactica = wiregui_tactica_plugin.addressbook:PublicAddressBook']
     },
